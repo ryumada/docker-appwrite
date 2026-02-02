@@ -62,38 +62,15 @@ generate_secret() {
     openssl rand -hex "$length"
 }
 
-phrase_generator() {
-    local command="$1"
-    if [ "$command" == "create" ]; then
-        if command -v python3 &>/dev/null; then
-            cat <<EOF > generate_phrase.py
-import random
-
-consonants = "bdfghjklmnprstvwz"
-vowels = "aeiou"
-
-def generate_word(length=4):
-    word = ""
-    for _ in range(length):
-        word += random.choice(consonants)
-        word += random.choice(vowels)
-    return word
-
-# Generate a word with 4 syllables (8 chars) like 'jokitaru'
-print(generate_word(4))
-EOF
-            chmod +x generate_phrase.py
-            chown "$REPOSITORY_OWNER:$REPOSITORY_OWNER" generate_phrase.py
-        else
-            log_error "Python3 not found. Skipping phrase generator creation."
-            exit 1
-        fi
-    elif [ "$command" == "remove" ]; then
-        rm -f generate_phrase.py
-    else
-        log_error "Invalid command: $command"
-        exit 1
-    fi
+generate_passphrase() {
+    local consonants="bcdfghjklmnpqrstvwxyz"
+    local vowels="aeiou"
+    local word=""
+    for i in {1..4}; do
+        word+="${consonants:RANDOM%21:1}"
+        word+="${vowels:RANDOM%5:1}"
+    done
+    echo "$word"
 }
 
 # Function to check if a variable has the default value
@@ -118,9 +95,6 @@ DEFAULT_EXECUTOR_SECRET="your-secret-key"
 DEFAULT_DB_PASS="password"
 DEFAULT_DB_ROOT_PASS="rootsecretpassword"
 DEFAULT_DB_USER="user"
-
-phrase_generator "create"
-
 # _APP_OPENSSL_KEY_V1
 if is_default_value "_APP_OPENSSL_KEY_V1" "$DEFAULT_OPENSSL_KEY"; then
     log_info "Generating _APP_OPENSSL_KEY_V1..."
@@ -138,7 +112,7 @@ fi
 # _APP_DB_USER
 if is_default_value "_APP_DB_USER" "$DEFAULT_DB_USER"; then
     log_info "Generating _APP_DB_USER..."
-    NEW_USER="$(sudo -u "$REPOSITORY_OWNER" python3 generate_phrase.py)-$(sudo -u "$REPOSITORY_OWNER" python3 generate_phrase.py)-$(sudo -u "$REPOSITORY_OWNER" python3 generate_phrase.py)"
+    NEW_USER="$(generate_passphrase)-$(generate_passphrase)-$(generate_passphrase)"
     sudo -u "$REPOSITORY_OWNER" sed -i "s|^_APP_DB_USER=.*|_APP_DB_USER=${NEW_USER}|" "$ENV_FILE"
     log_success "Generated DB User: ${NEW_USER}"
 fi
@@ -146,7 +120,7 @@ fi
 # _APP_DB_PASS
 if is_default_value "_APP_DB_PASS" "$DEFAULT_DB_PASS"; then
     log_info "Generating _APP_DB_PASS..."
-    NEW_PASS="$(sudo -u "$REPOSITORY_OWNER" python3 generate_phrase.py)-$(sudo -u "$REPOSITORY_OWNER" python3 generate_phrase.py)-$(sudo -u "$REPOSITORY_OWNER" python3 generate_phrase.py)"
+    NEW_PASS="$(generate_passphrase)-$(generate_passphrase)-$(generate_passphrase)"
     sudo -u "$REPOSITORY_OWNER" sed -i "s|^_APP_DB_PASS=.*|_APP_DB_PASS=${NEW_PASS}|" "$ENV_FILE"
     log_success "Generated DB User Password: ${NEW_PASS}"
 fi
@@ -155,11 +129,8 @@ fi
 if is_default_value "_APP_DB_ROOT_PASS" "$DEFAULT_DB_ROOT_PASS"; then
     log_info "Generating _APP_DB_ROOT_PASS..."
     # Generate a longer phrase for root
-    PHRASES="$(sudo -u "$REPOSITORY_OWNER" python3 generate_phrase.py)-$(sudo -u "$REPOSITORY_OWNER" python3 generate_phrase.py)-$(sudo -u "$REPOSITORY_OWNER" python3 generate_phrase.py)"
+    PHRASES="$(generate_passphrase)-$(generate_passphrase)-$(generate_passphrase)"
     sudo -u "$REPOSITORY_OWNER" sed -i "s|^_APP_DB_ROOT_PASS=.*|_APP_DB_ROOT_PASS=${PHRASES}|" "$ENV_FILE"
     log_success "Generated DB Root Password: ${PHRASES}"
 fi
-
-phrase_generator "remove"
-
 log_success "Setup complete! Your Appwrite environment is ready in ${ENV_FILE}"
