@@ -27,9 +27,17 @@ services:
       - appwrite-certificates:/storage/certificates:ro
     depends_on:
       - appwrite
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.appwrite-entry.rule=Host(`${_APP_DOMAIN}`)"
+      - "traefik.http.routers.appwrite-entry.entrypoints=websecure"
+      - "traefik.http.routers.appwrite-entry.tls=true"
+      - "traefik.http.routers.appwrite-entry.tls.certresolver=letsencrypt"
+      - "traefik.http.services.appwrite-entry.loadbalancer.server.port=80"
     networks:
       - gateway
       - appwrite
+      - proxy
 
   appwrite:
     image: appwrite/appwrite:1.8.1
@@ -956,6 +964,8 @@ networks:
     name: appwrite
   runtimes:
     name: runtimes
+  proxy:
+    external: true
 
 volumes:
   appwrite-mariadb:
