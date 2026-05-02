@@ -30,7 +30,7 @@ services:
       - appwrite
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.appwrite-entry.rule=Host(`${_APP_TRAEFIK_DOMAINS}`)"
+      - "traefik.http.routers.appwrite-entry.rule=Host(${_APP_TRAEFIK_DOMAINS})"
       - "traefik.http.routers.appwrite-entry.entrypoints=websecure"
       - "traefik.http.routers.appwrite-entry.tls=true"
       - "traefik.http.routers.appwrite-entry.tls.certresolver=letsencrypt"

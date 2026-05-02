@@ -145,7 +145,7 @@ if is_default_value "_APP_TRAEFIK_DOMAINS" "localhost"; then
     CURRENT_DOMAIN=$(get_env_value "_APP_DOMAIN")
     if [ "$CURRENT_DOMAIN" != "localhost" ]; then
         log_info "Generating _APP_TRAEFIK_DOMAINS based on _APP_DOMAIN..."
-        NEW_TRAEFIK_DOMAINS="appwrite.${CURRENT_DOMAIN},api.${CURRENT_DOMAIN}"
+        NEW_TRAEFIK_DOMAINS="\`appwrite.${CURRENT_DOMAIN}\`, \`api.${CURRENT_DOMAIN}\`"
         sudo -u "$REPOSITORY_OWNER" sed -i "s|^_APP_TRAEFIK_DOMAINS=.*|_APP_TRAEFIK_DOMAINS=${NEW_TRAEFIK_DOMAINS}|" "$ENV_FILE"
         log_success "Generated Traefik Domains: ${NEW_TRAEFIK_DOMAINS}"
     fi
