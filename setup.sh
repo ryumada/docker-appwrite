@@ -73,14 +73,23 @@ generate_passphrase() {
     echo "$word"
 }
 
-# Function to check if a variable has the default value
+# Function to check if a variable has the default value or is missing
 is_default_value() {
     local var_name="$1"
     local default_val="$2"
     local current_val
+
+    # If variable doesn't exist, it should be treated as needing setup
+    if ! grep -q "^${var_name}=" "$ENV_FILE"; then
+        return 0
+    fi
+
     current_val=$(grep "^${var_name}=" "$ENV_FILE" | cut -d'=' -f2-)
 
-    if [ "$current_val" == "$default_val" ]; then
+    # Remove backticks from current_val if they exist for comparison
+    local clean_val="${current_val//\`/}"
+
+    if [ "$clean_val" == "$default_val" ] || [ "$current_val" == "$default_val" ]; then
         return 0 # True, it is default
     else
         return 1 # False, it has been changed
@@ -145,8 +154,14 @@ if is_default_value "_APP_TRAEFIK_DOMAINS" "localhost"; then
     CURRENT_DOMAIN=$(get_env_value "_APP_DOMAIN")
     if [ "$CURRENT_DOMAIN" != "localhost" ]; then
         log_info "Generating _APP_TRAEFIK_DOMAINS based on _APP_DOMAIN..."
+        # If the variable is missing entirely, we need to append it.
+        # But setup.sh usually runs after update_env_file.sh which copies from .env.example.
         NEW_TRAEFIK_DOMAINS="\`appwrite.${CURRENT_DOMAIN}\`, \`api.${CURRENT_DOMAIN}\`"
-        sudo -u "$REPOSITORY_OWNER" sed -i "s|^_APP_TRAEFIK_DOMAINS=.*|_APP_TRAEFIK_DOMAINS=${NEW_TRAEFIK_DOMAINS}|" "$ENV_FILE"
+        if grep -q "^_APP_TRAEFIK_DOMAINS=" "$ENV_FILE"; then
+            sudo -u "$REPOSITORY_OWNER" sed -i "s|^_APP_TRAEFIK_DOMAINS=.*|_APP_TRAEFIK_DOMAINS=${NEW_TRAEFIK_DOMAINS}|" "$ENV_FILE"
+        else
+            echo "_APP_TRAEFIK_DOMAINS=${NEW_TRAEFIK_DOMAINS}" >> "$ENV_FILE"
+        fi
         log_success "Generated Traefik Domains: ${NEW_TRAEFIK_DOMAINS}"
     fi
 fi
