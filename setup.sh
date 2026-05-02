@@ -154,16 +154,18 @@ if is_default_value "_APP_TRAEFIK_DOMAINS" "localhost"; then
     CURRENT_DOMAIN=$(get_env_value "_APP_DOMAIN")
     if [ "$CURRENT_DOMAIN" != "localhost" ]; then
         log_info "Generating _APP_TRAEFIK_DOMAINS based on _APP_DOMAIN..."
-        # If the variable is missing entirely, we need to append it.
-        # But setup.sh usually runs after update_env_file.sh which copies from .env.example.
         NEW_TRAEFIK_DOMAINS="\`appwrite.${CURRENT_DOMAIN}\`, \`api.${CURRENT_DOMAIN}\`"
-        if grep -q "^_APP_TRAEFIK_DOMAINS=" "$ENV_FILE"; then
-            sudo -u "$REPOSITORY_OWNER" sed -i "s|^_APP_TRAEFIK_DOMAINS=.*|_APP_TRAEFIK_DOMAINS=${NEW_TRAEFIK_DOMAINS}|" "$ENV_FILE"
-        else
-            echo "_APP_TRAEFIK_DOMAINS=${NEW_TRAEFIK_DOMAINS}" >> "$ENV_FILE"
-        fi
-        log_success "Generated Traefik Domains: ${NEW_TRAEFIK_DOMAINS}"
+    else
+        log_info "Ensuring backticks for localhost Traefik Domains..."
+        NEW_TRAEFIK_DOMAINS="\`localhost\`"
     fi
+    
+    if grep -q "^_APP_TRAEFIK_DOMAINS=" "$ENV_FILE"; then
+        sudo -u "$REPOSITORY_OWNER" sed -i "s|^_APP_TRAEFIK_DOMAINS=.*|_APP_TRAEFIK_DOMAINS=${NEW_TRAEFIK_DOMAINS}|" "$ENV_FILE"
+    else
+        echo "_APP_TRAEFIK_DOMAINS=${NEW_TRAEFIK_DOMAINS}" >> "$ENV_FILE"
+    fi
+    log_success "Set Traefik Domains: ${NEW_TRAEFIK_DOMAINS}"
 fi
 
 # --- Docker Compose Generation ---
@@ -189,8 +191,41 @@ if [ -f "$COMPOSE_EXAMPLE" ]; then
         # Keep NO_TRAEFIK sections but remove markers
         sed -i '/# <NO_TRAEFIK>/d; /# <\/NO_TRAEFIK>/d' "$COMPOSE_FILE"
     fi
+
+    # --- Static Variable Substitution ---
+    log_info "Performing static variable substitution in ${COMPOSE_FILE}..."
+    # We use a temporary file to read from while modifying the main one to avoid issues
+    while IFS= read -r line || [ -n "$line" ]; do
+        # Only process lines that look like variable assignments
+        if [[ "$line" =~ ^[a-zA-Z_][a-zA-Z0-9_]*= ]]; then
+            var_name=$(echo "$line" | cut -d'=' -f1)
+            var_value=$(echo "$line" | cut -d'=' -f2-)
+            
+            # Skip if value is empty
+            [ -z "$var_value" ] && continue
+            
+            # Escape special characters for sed: \ & /
+            # We use | as sed delimiter, so we must escape it too if it appears in value
+            escaped_value=$(echo "$var_value" | sed 's/[\\&/|]/\\&/g')
+            
+            # Substitute ${VAR} and $VAR
+            sed -i "s|\${$var_name}|$escaped_value|g" "$COMPOSE_FILE"
+            # Be careful with $VAR to avoid partial matches (e.g., $APP matching $APP_WRITE)
+            # But since we mostly use ${}, we'll stick to that for now to be safe, 
+            # or use word boundaries if available.
+        fi
+    done < "$ENV_FILE"
+
+    # Handle the specific case with default value syntax: ${_APP_TRAEFIK_PROXY_NETWORK:-proxy}
+    PROXY_NET=$(get_env_value "_APP_TRAEFIK_PROXY_NETWORK")
+    if [ -n "$PROXY_NET" ]; then
+        sed -i "s|\${_APP_TRAEFIK_PROXY_NETWORK:-proxy}|$PROXY_NET|g" "$COMPOSE_FILE"
+    else
+        sed -i "s|\${_APP_TRAEFIK_PROXY_NETWORK:-proxy}|proxy|g" "$COMPOSE_FILE"
+    fi
+
     chown "$REPOSITORY_OWNER": "$COMPOSE_FILE"
-    log_success "${COMPOSE_FILE} generated successfully."
+    log_success "${COMPOSE_FILE} generated successfully with static values."
 else
     log_warn "${COMPOSE_EXAMPLE} not found. Skipping docker-compose generation."
 fi
