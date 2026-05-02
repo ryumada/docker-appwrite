@@ -5,6 +5,7 @@ x-logging: &x-logging
       max-file: '5'
       max-size: '10m'
 services:
+# <TRAEFIK_ONLY>
   traefik:
     image: traefik:2.11
     container_name: appwrite-traefik
@@ -29,7 +30,7 @@ services:
       - appwrite
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.appwrite-entry.rule=Host(`${_APP_DOMAIN}`)"
+      - "traefik.http.routers.appwrite-entry.rule=Host(`${_APP_TRAEFIK_DOMAINS}`)"
       - "traefik.http.routers.appwrite-entry.entrypoints=websecure"
       - "traefik.http.routers.appwrite-entry.tls=true"
       - "traefik.http.routers.appwrite-entry.tls.certresolver=letsencrypt"
@@ -38,6 +39,7 @@ services:
       - gateway
       - appwrite
       - proxy
+# </TRAEFIK_ONLY>
 
   appwrite:
     image: appwrite/appwrite:1.8.1
@@ -46,6 +48,12 @@ services:
     restart: unless-stopped
     networks:
       - appwrite
+# <NO_TRAEFIK>
+    ports:
+      - ${_APP_MAIN_PORT_HTTP}:80
+      - ${_APP_MAIN_PORT_HTTPS}:443
+# </NO_TRAEFIK>
+# <TRAEFIK_ONLY>
     labels:
       - traefik.enable=true
       - traefik.constraint-label-stack=appwrite
@@ -60,6 +68,7 @@ services:
       - traefik.http.routers.appwrite_api_https.rule=PathPrefix(`/`)
       - traefik.http.routers.appwrite_api_https.service=appwrite_api
       - traefik.http.routers.appwrite_api_https.tls=true
+# </TRAEFIK_ONLY>
     volumes:
       - appwrite-uploads:/storage/uploads:rw
       - appwrite-imports:/storage/imports:rw
@@ -184,6 +193,7 @@ services:
     restart: unless-stopped
     networks:
       - appwrite
+# <TRAEFIK_ONLY>
     labels:
       - "traefik.enable=true"
       - "traefik.constraint-label-stack=appwrite"
@@ -198,6 +208,7 @@ services:
       - traefik.http.routers.appwrite_console_https.rule=PathPrefix(`/console`)
       - traefik.http.routers.appwrite_console_https.service=appwrite_console
       - traefik.http.routers.appwrite_console_https.tls=true
+# </TRAEFIK_ONLY>
 
   appwrite-realtime:
     image: appwrite/appwrite:1.8.1
@@ -205,6 +216,7 @@ services:
     container_name: appwrite-realtime
     <<: *x-logging
     restart: unless-stopped
+# <TRAEFIK_ONLY>
     labels:
       - "traefik.enable=true"
       - "traefik.constraint-label-stack=appwrite"
@@ -219,6 +231,7 @@ services:
       - traefik.http.routers.appwrite_realtime_wss.rule=PathPrefix(`/v1/realtime`)
       - traefik.http.routers.appwrite_realtime_wss.service=appwrite_realtime
       - traefik.http.routers.appwrite_realtime_wss.tls=true
+# </TRAEFIK_ONLY>
     networks:
       - appwrite
     depends_on:
@@ -964,8 +977,11 @@ networks:
     name: appwrite
   runtimes:
     name: runtimes
+# <TRAEFIK_ONLY>
   proxy:
     external: true
+    name: ${_APP_TRAEFIK_PROXY_NETWORK:-proxy}
+# </TRAEFIK_ONLY>
 
 volumes:
   appwrite-mariadb:

@@ -87,6 +87,12 @@ is_default_value() {
     fi
 }
 
+# Function to get a variable value from .env
+get_env_value() {
+    local var_name="$1"
+    grep "^${var_name}=" "$ENV_FILE" | cut -d'=' -f2-
+}
+
 log_info "Checking if secrets need generation..."
 
 # Defaults from .env.example
@@ -133,4 +139,60 @@ if is_default_value "_APP_DB_ROOT_PASS" "$DEFAULT_DB_ROOT_PASS"; then
     sudo -u "$REPOSITORY_OWNER" sed -i "s|^_APP_DB_ROOT_PASS=.*|_APP_DB_ROOT_PASS=${PHRASES}|" "$ENV_FILE"
     log_success "Generated DB Root Password: ${PHRASES}"
 fi
+
+# _APP_TRAEFIK_DOMAINS
+if is_default_value "_APP_TRAEFIK_DOMAINS" "localhost"; then
+    CURRENT_DOMAIN=$(get_env_value "_APP_DOMAIN")
+    if [ "$CURRENT_DOMAIN" != "localhost" ]; then
+        log_info "Generating _APP_TRAEFIK_DOMAINS based on _APP_DOMAIN..."
+        NEW_TRAEFIK_DOMAINS="appwrite.${CURRENT_DOMAIN},api.${CURRENT_DOMAIN}"
+        sudo -u "$REPOSITORY_OWNER" sed -i "s|^_APP_TRAEFIK_DOMAINS=.*|_APP_TRAEFIK_DOMAINS=${NEW_TRAEFIK_DOMAINS}|" "$ENV_FILE"
+        log_success "Generated Traefik Domains: ${NEW_TRAEFIK_DOMAINS}"
+    fi
+fi
+
+# --- Docker Compose Generation ---
+COMPOSE_EXAMPLE="docker-compose.yml.example"
+COMPOSE_FILE="docker-compose.yml"
+
+if [ -f "$COMPOSE_EXAMPLE" ]; then
+    log_info "Generating ${COMPOSE_FILE} from ${COMPOSE_EXAMPLE}..."
+    cp "$COMPOSE_EXAMPLE" "$COMPOSE_FILE"
+
+    PROXY_MODE=$(get_env_value "_APP_PROXY_MODE")
+
+    if [ "$PROXY_MODE" == "traefik" ]; then
+        log_info "Traefik mode enabled. Keeping Traefik configuration."
+        # Just remove the markers themselves
+        sed -i '/# <TRAEFIK_ONLY>/d; /# <\/TRAEFIK_ONLY>/d' "$COMPOSE_FILE"
+        # Remove NO_TRAEFIK sections including the markers
+        sed -i '/# <NO_TRAEFIK>/,/# <\/NO_TRAEFIK>/d' "$COMPOSE_FILE"
+    else
+        log_info "Traefik mode disabled. Removing Traefik configuration section."
+        # Remove the blocks including the markers
+        sed -i '/# <TRAEFIK_ONLY>/,/# <\/TRAEFIK_ONLY>/d' "$COMPOSE_FILE"
+        # Keep NO_TRAEFIK sections but remove markers
+        sed -i '/# <NO_TRAEFIK>/d; /# <\/NO_TRAEFIK>/d' "$COMPOSE_FILE"
+    fi
+    chown "$REPOSITORY_OWNER": "$COMPOSE_FILE"
+    log_success "${COMPOSE_FILE} generated successfully."
+else
+    log_warn "${COMPOSE_EXAMPLE} not found. Skipping docker-compose generation."
+fi
+
+# --- Proxy Network Setup ---
+PROXY_MODE=$(get_env_value "_APP_PROXY_MODE")
+TRAEFIK_NETWORK=$(get_env_value "_APP_TRAEFIK_PROXY_NETWORK")
+
+if [ "$PROXY_MODE" == "traefik" ] && [ -n "$TRAEFIK_NETWORK" ]; then
+    log_info "Proxy mode is set to traefik. Checking for network: ${TRAEFIK_NETWORK}..."
+    if ! docker network inspect "$TRAEFIK_NETWORK" >/dev/null 2>&1; then
+        log_info "Creating external network: ${TRAEFIK_NETWORK}..."
+        docker network create "$TRAEFIK_NETWORK"
+        log_success "Network ${TRAEFIK_NETWORK} created."
+    else
+        log_success "Network ${TRAEFIK_NETWORK} already exists."
+    fi
+fi
+
 log_success "Setup complete! Your Appwrite environment is ready in ${ENV_FILE}"
