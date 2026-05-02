@@ -30,11 +30,18 @@ services:
       - appwrite
     labels:
       - "traefik.enable=true"
+      # Explicitly tell Traefik which network to use
+      - "traefik.docker.network=${_APP_TRAEFIK_PROXY_NETWORK:-proxy}"
+      # HTTPS Router
       - "traefik.http.routers.appwrite-entry.rule=Host(${_APP_TRAEFIK_DOMAINS})"
       - "traefik.http.routers.appwrite-entry.entrypoints=websecure"
       - "traefik.http.routers.appwrite-entry.tls=true"
       - "traefik.http.routers.appwrite-entry.tls.certresolver=letsencrypt"
       - "traefik.http.services.appwrite-entry.loadbalancer.server.port=80"
+      # HTTP Router (for redirects)
+      - "traefik.http.routers.appwrite-entry-http.rule=Host(${_APP_TRAEFIK_DOMAINS})"
+      - "traefik.http.routers.appwrite-entry-http.entrypoints=web"
+      - "traefik.http.routers.appwrite-entry-http.middlewares=redirect-to-https@docker"
     networks:
       - gateway
       - appwrite
